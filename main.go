@@ -58,7 +58,9 @@ func appendDynamicS3BucketLambda(lambdaFunctions []*sparta.LambdaAWSInfo) []*spa
 		resourceMetadata map[string]interface{},
 		S3Bucket string,
 		S3Key string,
+		buildID string,
 		template *gocf.Template,
+		context map[string]interface{},
 		logger *logrus.Logger) error {
 		cfResource := template.AddResource(s3BucketResourceName, &gocf.S3Bucket{
 			AccessControl: gocf.String("PublicRead"),
