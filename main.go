@@ -1,32 +1,36 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	gocf "github.com/crewjam/go-cloudformation"
-	"net/http"
 
-	"github.com/Sirupsen/logrus"
+	awsLambdaEvents "github.com/aws/aws-lambda-go/events"
+	awsLambdaContext "github.com/aws/aws-lambda-go/lambdacontext"
 	sparta "github.com/mweagle/Sparta"
 	spartaCF "github.com/mweagle/Sparta/aws/cloudformation"
+	gocf "github.com/mweagle/go-cloudformation"
+	"github.com/sirupsen/logrus"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // Bucket handler
 //
-func echoS3DynamicBucketEvent(event *json.RawMessage,
-	context *sparta.LambdaContext,
-	w http.ResponseWriter,
-	logger *logrus.Logger) {
+func echoS3DynamicBucketEvent(ctx context.Context,
+	s3Event awsLambdaEvents.S3Event) (awsLambdaEvents.S3Event, error) {
+
+	logger, loggerOk := ctx.Value(sparta.ContextKeyLogger).(*logrus.Logger)
+	if loggerOk {
+		logger.Info("Access structured logger")
+	}
+	awsContext, _ := awsLambdaContext.FromContext(ctx)
 
 	config, _ := sparta.Discover()
 	logger.WithFields(logrus.Fields{
-		"RequestID":     context.AWSRequestID,
-		"Event":         string(*event),
+		"RequestID":     awsContext.AwsRequestID,
+		"Event":         s3Event,
 		"Configuration": config,
 	}).Info("Request received")
-
-	fmt.Fprintf(w, string(*event))
+	return s3Event, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -36,7 +40,10 @@ func appendDynamicS3BucketLambda(lambdaFunctions []*sparta.LambdaAWSInfo) []*spa
 
 	s3BucketResourceName := sparta.CloudFormationResourceName("S3DynamicBucket")
 
-	lambdaFn := sparta.NewLambda(sparta.IAMRoleDefinition{}, echoS3DynamicBucketEvent, nil)
+	lambdaFn := sparta.HandleAWSLambda("echo S3 event",
+		echoS3DynamicBucketEvent,
+		sparta.IAMRoleDefinition{})
+
 	lambdaFn.Permissions = append(lambdaFn.Permissions, sparta.S3Permission{
 		BasePermission: sparta.BasePermission{
 			SourceArn: gocf.Ref(s3BucketResourceName),
@@ -50,7 +57,8 @@ func appendDynamicS3BucketLambda(lambdaFunctions []*sparta.LambdaAWSInfo) []*spa
 		sparta.IAMRolePrivilege{
 			Actions:  []string{"s3:GetObject", "s3:HeadObject"},
 			Resource: spartaCF.S3AllKeysArnForBucket(gocf.Ref(s3BucketResourceName)),
-		})
+		},
+	)
 
 	lambdaFn.Decorator = func(serviceName string,
 		lambdaResourceName string,
